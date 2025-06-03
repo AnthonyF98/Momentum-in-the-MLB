@@ -5,62 +5,69 @@ date: "2025-05-29"
 output: html_document
 ---
 ```{r}
-#devtools::install_github("billpetti/baseballr")
+devtools::install_github("billpetti/baseballr")
 
 library(baseballr)
 library(dplyr)
 library(purrr)
 library(lubridate)
+library(tidyverse)
+
 
 # Load required packages
-install.packages("data.table")  # Only run if needed
+#install.packages("data.table")  # Only run if needed
 library(data.table)
 library(dplyr)
 library(purrr)
 
-# Function to safely pull Statcast data from Baseball Savant
-get_statcast_data_v2 <- function(start_date, end_date) {
-  base_url <- "https://baseballsavant.mlb.com/statcast_search/csv?all=true"
+```
+
+```{r}
+
+
+# New safer downloader
+get_statcast_data_weekly <- function(start_date, end_date) {
   url <- paste0(
-    base_url,
+    "https://baseballsavant.mlb.com/statcast_search/csv?all=true",
     "&hfPT=&hfAB=&hfBBT=&hfPR=&hfZ=&stadium=&hfBBL=&hfNewZones=&hfGT=R%7CPO%7CS%7C",
-    "&hfC&hfSea=&hfSit=&hfOuts=&opponent=&pitcher_throws=&batter_stands=",
+    "&hfC&hfSit=&hfOuts=&opponent=&pitcher_throws=&batter_stands=",
     "&hfSA=&player_type=batter&hfInfield=&team=&position=&hfOutfield=",
     "&hfRO=&home_road=&game_date_gt=", start_date,
     "&game_date_lt=", end_date,
-    "&hfFlag=&hfPull=&metric_1=&hfInn=&min_pitches=0&min_results=0",
     "&group_by=name&sort_col=pitches&player_event_sort=h_launch_speed",
-    "&sort_order=desc&min_abs=0&type=details"
+    "&sort_order=desc&type=details"
   )
   
   message(paste("Downloading:", start_date, "to", end_date))
-  
   tryCatch({
-    df <- fread(url, showProgress = FALSE, fill = TRUE)
-    df
+    fread(url, showProgress = FALSE, fill = TRUE)
   }, error = function(e) {
-    message(paste("Failed:", e$message))
-    return(NULL)
+    message("Failed:", e$message)
+    NULL
   })
 }
 
-# Create date ranges for COVID-shortened 2020 season
-get_monthly_ranges_2020 <- function() {
-  tibble(
-    start = c("2020-07-23", "2020-08-01", "2020-09-01"),
-    end   = c("2020-07-31", "2020-08-31", "2020-09-27")
-  )
-}
-
-# Download and combine 2020 Statcast data
-date_ranges_2020 <- get_monthly_ranges_2020()
-
-statcast_2020 <- map2_dfr(date_ranges_2020$start, date_ranges_2020$end, get_statcast_data_v2)
-
-# Save for reuse
-saveRDS(statcast_2020, "statcast_2020.rds")
-
 ```
+
+```{r}
+# Define weekly ranges
+dates_2020 <- data.frame(
+  start = c("2020-07-23", "2020-07-30", "2020-08-06", "2020-08-13", "2020-08-20", "2020-08-27", "2020-09-03", "2020-09-10", "2020-09-17", "2020-09-24"),
+  end   = c("2020-07-29", "2020-08-05", "2020-08-12", "2020-08-19", "2020-08-26", "2020-09-02", "2020-09-09", "2020-09-16", "2020-09-23", "2020-09-27")
+)
+
+# Download in chunks and combine
+#statcast_2020 <- purrr::map2_dfr(dates_2020$start, dates_2020$end, get_statcast_data_weekly)
+
+# Save the result
+#saveRDS(statcast_2020, "statcast_2020_full.rds")
+
+statcast_2020 <- readRDS("statcast_2020_full.rds")
+```
+
+
+
+
 
 ```{r}
 #summary(statcast_2020)
@@ -123,7 +130,12 @@ statcast_pa_2020 <- statcast_pa_2020 %>%
 ```{r}
 # Calculate batting average with vs. without momentum
 momentum_ba <- statcast_pa_2020 %>%
-  filter(events %in% c("single", "double", "triple", "home_run", "field_out", "strikeout", "grounded_into_double_play")) %>%
+  filter(events %in% c(
+    "single", "double", "triple", "home_run",
+    "field_out", "strikeout", "grounded_into_double_play",
+    "double_play", "strikeout_double_play",
+    "fielders_choice", "force_out"
+  )) %>%
   mutate(hit = ifelse(events %in% c("single", "double", "triple", "home_run"), 1, 0)) %>%
   group_by(momentum) %>%
   summarise(
@@ -134,7 +146,9 @@ momentum_ba <- statcast_pa_2020 %>%
 
 print(momentum_ba)
 
+
 ```
+
 
 
 
@@ -190,6 +204,19 @@ team_comparison <- team_momentum_ba %>%
 print(team_comparison)
 
 ```
+```{r}
+# Total hits in cleaned dataset
+sum(statcast_pa_2020$hit, na.rm = TRUE)
+
+# Total hits from your momentum breakdown
+sum(team_comparison$Hits_momentum_0, na.rm = TRUE) + 
+sum(team_comparison$Hits_momentum_1, na.rm = TRUE)
+
+```
+
+
+The reason the total hits from the momentum breakdown (Hits_momentum_0 + Hits_momentum_1) don't match official MLB hit totals is because my analysis only includes plate appearances with specific qualifying events (like hits, outs, and double plays), and excludes others like walks, hit-by-pitches, and sac bunts. Additionally, momentum can only be calculated when there's a valid previous batter, so the first batter of each inning or game may be excluded. However, since my total hits from the filtered dataset match the combined momentum hits exactly (13,186), my momentum analysis is internally consistent and correctly reflects the subset of data I chose to study.
+
 
 ```{r}
 # Filter valid at-bats and create the hit column
@@ -208,21 +235,24 @@ t_test_result <- t.test(hit ~ momentum, data = valid_pas)
 print(t_test_result)
 
 ```
+In this stage of my project, I used a Welch Two Sample t-test to compare batting averages in plate appearances that followed a successful hit or sac fly (momentum = 1) versus those that did not (momentum = 0). My code filtered out non-official at-bats and isolated only the events relevant to batting average, ensuring a clean comparison. The results showed that hitters in momentum situations had a batting average of .254 compared to .244 without momentum—a statistically significant difference with a p-value of 0.018. This suggests that, based on 2020 data, there is evidence that momentum may have a small but measurable impact on offensive performance in Major League Baseball.
 
 ```{r}
 library(ggplot2)
 
-ggplot(team_comparison, aes(x = reorder(batting_team, BA_Difference), y = BA_Difference, fill = BA_Difference > 0)) +
+ggplot(team_comparison %>% filter(!is.na(batting_team)), 
+       aes(x = reorder(batting_team, BA_Difference), y = BA_Difference, fill = BA_Difference > 0)) +
   geom_col(width = 0.7, color = "white", show.legend = FALSE) +
-  scale_fill_manual(values = c("FALSE" = "#e74c3c", "TRUE" = "#2ecc71")) +  # red for negative, green for positive
-  geom_text(aes(label = sprintf("%.3f", BA_Difference)), hjust = ifelse(team_comparison$BA_Difference > 0, -0.15, 1.1), 
+  scale_fill_manual(values = c("FALSE" = "#e74c3c", "TRUE" = "#2ecc71")) +
+  geom_text(aes(label = sprintf("%+d pts", round(BA_Difference * 1000))), 
+            hjust = ifelse(team_comparison$BA_Difference > 0, -0.15, 1.1), 
             size = 3.5, color = "black") +
   coord_flip() +
   labs(
     title = "Which Teams Ride the Momentum?",
     subtitle = "Difference in Batting Average When Previous Batter Got a Hit or Sac Fly (2020)",
     x = "Team",
-    y = "Momentum Batting Avg. Difference"
+    y = "Momentum Batting Avg. Difference (in points)"
   ) +
   theme_minimal(base_size = 13) +
   theme(
@@ -231,8 +261,9 @@ ggplot(team_comparison, aes(x = reorder(batting_team, BA_Difference), y = BA_Dif
     panel.grid.major.y = element_blank(),
     panel.grid.minor = element_blank(),
     axis.text.y = element_text(face = "bold")
-  ) +
-  xlim(c(levels(reorder(team_comparison$batting_team, team_comparison$BA_Difference)), NA))
+  )
 
 ```
+
+
 
