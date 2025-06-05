@@ -1,0 +1,104 @@
+---
+title: "Analysis from 2020-2024"
+author: "Anthony Fernandez"
+date: "2025-06-05"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+
+# Read in each year's data and add a Year column
+tc_2020 <- read_csv("team_comparison_20.csv") %>% mutate(Year = 2020)
+tc_2021 <- read_csv("team_comparison_21.csv") %>% mutate(Year = 2021)
+tc_2022 <- read_csv("team_comparison_22.csv") %>% mutate(Year = 2022)
+tc_2023 <- read_csv("team_comparison_23.csv") %>% mutate(Year = 2023)
+tc_2024 <- read_csv("team_comparison_24.csv") %>% mutate(Year = 2024)
+
+# Combine into one data frame
+team_comparison_all <- bind_rows(tc_2020, tc_2021, tc_2022, tc_2023, tc_2024)
+
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+ggplot(team_comparison_all, aes(x = Year, y = BA_Difference, group = batting_team, color = batting_team)) +
+  geom_line(alpha = 0.6) +
+  geom_point() +
+  labs(
+    title = "Momentum Effect by Team Over Time (2020–2024)",
+    x = "Season",
+    y = "Difference in Batting Average (Momentum - No Momentum)",
+    color = "Team"
+  ) +
+  theme_minimal(base_size = 13)
+
+```
+
+```{r}
+team_comparison_all %>%
+  group_by(Year) %>%
+  summarise(Avg_BA_Diff = mean(BA_Difference, na.rm = TRUE)) %>%
+  ggplot(aes(x = Year, y = Avg_BA_Diff)) +
+  geom_line(color = "#2c3e50", size = 1.2) +
+  geom_point(size = 3, color = "#e67e22") +
+  labs(
+    title = "League-Wide Average Momentum Batting Average Difference",
+    y = "Avg. BA Difference",
+    x = "Year"
+  ) +
+  theme_minimal(base_size = 13)
+
+```
+
+```{r}
+library(tidyr)
+
+trend_summary <- team_comparison_all %>%
+  group_by(batting_team) %>%
+  summarise(trend = lm(BA_Difference ~ Year)$coefficients[2]) %>%
+  arrange(desc(trend)) %>%
+  slice(1:5)
+
+top_teams <- trend_summary$batting_team
+
+team_comparison_all %>%
+  filter(batting_team %in% top_teams) %>%
+  ggplot(aes(x = Year, y = BA_Difference, color = batting_team)) +
+  geom_line(size = 1.1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Top 5 Teams Increasing in Momentum Effect",
+    y = "BA Difference",
+    x = "Year"
+  ) +
+  theme_minimal(base_size = 13)
+
+```
+
+
+```{r}
+library(cluster)
+library(factoextra)
+
+pivoted <- team_comparison_all %>%
+  select(batting_team, Year, BA_Difference) %>%
+  tidyr::pivot_wider(names_from = Year, values_from = BA_Difference)
+
+# Replace NAs with column means for clustering
+pivoted_clean <- pivoted %>%
+  column_to_rownames("batting_team") %>%
+  mutate(across(everything(), ~ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+
+# Run K-means
+set.seed(42)
+km <- kmeans(pivoted_clean, centers = 7, nstart = 25)
+
+fviz_cluster(km, data = pivoted_clean) +
+  labs(title = "Clustering Teams by Momentum Patterns (2020–2024)")
+
+```
+
