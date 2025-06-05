@@ -1,0 +1,269 @@
+---
+title: "Momentum in the MLB 2020"
+author: "Anthony Fernandez"
+date: "2025-05-29"
+output: html_document
+---
+```{r message=FALSE, warning=FALSE}
+devtools::install_github("billpetti/baseballr")
+
+library(baseballr)
+library(dplyr)
+library(purrr)
+library(lubridate)
+library(tidyverse)
+
+
+# Load required packages
+#install.packages("data.table")  # Only run if needed
+library(data.table)
+library(dplyr)
+library(purrr)
+
+```
+
+```{r}
+
+
+# New safer downloader
+get_statcast_data_weekly <- function(start_date, end_date) {
+  url <- paste0(
+    "https://baseballsavant.mlb.com/statcast_search/csv?all=true",
+    "&hfPT=&hfAB=&hfBBT=&hfPR=&hfZ=&stadium=&hfBBL=&hfNewZones=&hfGT=R%7CPO%7CS%7C",
+    "&hfC&hfSit=&hfOuts=&opponent=&pitcher_throws=&batter_stands=",
+    "&hfSA=&player_type=batter&hfInfield=&team=&position=&hfOutfield=",
+    "&hfRO=&home_road=&game_date_gt=", start_date,
+    "&game_date_lt=", end_date,
+    "&group_by=name&sort_col=pitches&player_event_sort=h_launch_speed",
+    "&sort_order=desc&type=details"
+  )
+  
+  message(paste("Downloading:", start_date, "to", end_date))
+  tryCatch({
+    fread(url, showProgress = FALSE, fill = TRUE)
+  }, error = function(e) {
+    message("Failed:", e$message)
+    NULL
+  })
+}
+
+```
+
+```{r}
+# Define weekly ranges
+dates_2020 <- data.frame(
+  start = c("2020-07-23", "2020-07-30", "2020-08-06", "2020-08-13", "2020-08-20", "2020-08-27", "2020-09-03", "2020-09-10", "2020-09-17", "2020-09-24"),
+  end   = c("2020-07-29", "2020-08-05", "2020-08-12", "2020-08-19", "2020-08-26", "2020-09-02", "2020-09-09", "2020-09-16", "2020-09-23", "2020-09-27")
+)
+
+# Download in chunks and combine
+#statcast_2020 <- purrr::map2_dfr(dates_2020$start, dates_2020$end, get_statcast_data_weekly)
+
+# Save the result
+#saveRDS(statcast_2020, "statcast_2020_full.rds")
+
+statcast_2020 <- readRDS("statcast_2020_full.rds")
+```
+
+
+
+
+
+```{r}
+#summary(statcast_2020)
+
+cols_to_keep <- c(
+  "game_pk",             # Game ID
+  "game_date",           # Date of game
+  "at_bat_number",       # Sequential number of PA in game
+  "inning",              # Inning
+  "inning_topbot",       # Top or Bottom of inning
+  "batter",              # Batter ID
+  "player_name",         # Batter name
+  "events",              # Event result (e.g. 'single', 'groundout')
+  "description",         # Useful for identifying completed PAs
+  "home_team",           # Home team
+  "away_team",           # Away team
+  "bat_score",           # Score at the time
+  "post_bat_score",      # Score after PA
+  "home_score", "away_score", # Full context
+  "pitch_number"         # Needed to make sure we're only using the final pitch of the PA
+)
+
+statcast_2020_clean <- statcast_2020 %>%
+  select(all_of(cols_to_keep)) %>%
+  filter(!is.na(events))  # Remove non-PA rows (e.g. pickoffs, warmups)
+
+# Check result
+glimpse(statcast_2020_clean)
+
+unique(statcast_2020$events)
+
+
+```
+```{r}
+# Keep only the final pitch of each at-bat (where event is not NA and last pitch_number per at_bat)
+library(dplyr)
+
+statcast_pa_2020 <- statcast_2020_clean %>%
+  filter(!is.na(events), events != "") %>%
+  group_by(game_pk, at_bat_number) %>%
+  filter(pitch_number == max(pitch_number)) %>%
+  ungroup()
+
+```
+
+```{r}
+# Sort by game, inning, top/bot, and at-bat
+statcast_pa_2020 <- statcast_pa_2020 %>%
+  arrange(game_pk, inning, inning_topbot, at_bat_number) %>%
+  group_by(game_pk, inning, inning_topbot) %>%
+  mutate(
+    prev_event = lag(events),
+    prev_batter = lag(batter),
+    momentum = ifelse(prev_event %in% c("single", "double", "triple", "home_run", "sac_fly"), 1, 0)
+  ) %>%
+  ungroup()
+
+```
+
+```{r}
+# Calculate batting average with vs. without momentum
+momentum_ba <- statcast_pa_2020 %>%
+  filter(events %in% c(
+    "single", "double", "triple", "home_run",
+    "field_out", "strikeout", "grounded_into_double_play",
+    "double_play", "strikeout_double_play",
+    "fielders_choice", "force_out"
+  )) %>%
+  mutate(hit = ifelse(events %in% c("single", "double", "triple", "home_run"), 1, 0)) %>%
+  group_by(momentum) %>%
+  summarise(
+    PA = n(),
+    Hits = sum(hit),
+    Batting_Average = mean(hit)
+  )
+
+print(momentum_ba)
+
+
+```
+
+
+
+
+
+############################################
+########Break Down by Team##################
+############################################
+
+```{r}
+statcast_pa_2020 <- statcast_pa_2020 %>%
+  mutate(batting_team = ifelse(inning_topbot == "Top", away_team, home_team))
+
+statcast_pa_2020 <- statcast_pa_2020 %>%
+  mutate(hit = ifelse(events %in% c("single", "double", "triple", "home_run"), 1, 0))
+
+```
+
+```{r}
+library(dplyr)
+
+team_momentum_ba <- statcast_pa_2020 %>%
+ filter(events %in% c(
+    "single", "double", "triple", "home_run",
+    "field_out", "strikeout", "grounded_into_double_play",
+    "double_play", "strikeout_double_play",
+    "fielders_choice", "force_out"
+  )) %>%
+  group_by(batting_team, momentum) %>%
+  summarise(
+    PA = n(),
+    Hits = sum(hit),
+    Batting_Average = mean(hit),
+    .groups = "drop"
+  )
+
+```
+
+```{r}
+library(tidyr)
+
+team_comparison <- team_momentum_ba %>%
+  pivot_wider(
+    names_from = momentum,
+    values_from = c(PA, Hits, Batting_Average),
+    names_prefix = "momentum_"
+  ) %>%
+  mutate(
+    BA_Difference = Batting_Average_momentum_1 - Batting_Average_momentum_0
+  ) %>%
+  arrange(desc(BA_Difference))
+
+# View top teams by momentum boost
+print(team_comparison)
+
+```
+```{r}
+# Total hits in cleaned dataset
+sum(statcast_pa_2020$hit, na.rm = TRUE)
+
+# Total hits from your momentum breakdown
+sum(team_comparison$Hits_momentum_0, na.rm = TRUE) + 
+sum(team_comparison$Hits_momentum_1, na.rm = TRUE)
+
+```
+
+
+The reason the total hits from the momentum breakdown (Hits_momentum_0 + Hits_momentum_1) don't match official MLB hit totals is because my analysis only includes plate appearances with specific qualifying events (like hits, outs, and double plays), and excludes others like walks, hit-by-pitches, and sac bunts. Additionally, momentum can only be calculated when there's a valid previous batter, so the first batter of each inning or game may be excluded. However, since my total hits from the filtered dataset match the combined momentum hits exactly (13,186), my momentum analysis is internally consistent and correctly reflects the subset of data I chose to study.
+
+
+```{r}
+# Filter valid at-bats and create the hit column
+valid_pas <- statcast_pa_2020 %>%
+  filter(events %in% c(
+    "single", "double", "triple", "home_run",
+    "field_out", "strikeout", "grounded_into_double_play",
+    "double_play", "strikeout_double_play",
+    "fielders_choice", "force_out"
+  )) %>%
+  mutate(hit = ifelse(events %in% c("single", "double", "triple", "home_run"), 1, 0))
+
+# Run the t-test
+t_test_result <- t.test(hit ~ momentum, data = valid_pas)
+
+print(t_test_result)
+
+```
+In this stage of my project, I used a Welch Two Sample t-test to compare batting averages in plate appearances that followed a successful hit or sac fly (momentum = 1) versus those that did not (momentum = 0). My code filtered out non-official at-bats and isolated only the events relevant to batting average, ensuring a clean comparison. The results showed that hitters in momentum situations had a batting average of .254 compared to .244 without momentum—a statistically significant difference with a p-value of 0.018. This suggests that, based on 2020 data, there is evidence that momentum may have a small but measurable impact on offensive performance in Major League Baseball.
+
+```{r}
+library(ggplot2)
+
+ggplot(team_comparison %>% filter(!is.na(batting_team)), 
+       aes(x = reorder(batting_team, BA_Difference), y = BA_Difference, fill = BA_Difference > 0)) +
+  geom_col(width = 0.7, color = "white", show.legend = FALSE) +
+  scale_fill_manual(values = c("FALSE" = "#e74c3c", "TRUE" = "#2ecc71")) +
+  geom_text(aes(label = sprintf("%+d pts", round(BA_Difference * 1000))), 
+            hjust = ifelse(team_comparison$BA_Difference > 0, -0.15, 1.1), 
+            size = 3.5, color = "black") +
+  coord_flip() +
+  labs(
+    title = "Which Teams Ride the Momentum?",
+    subtitle = "Difference in Batting Average When Previous Batter Got a Hit or Sac Fly (2020)",
+    x = "Team",
+    y = "Momentum Batting Avg. Difference (in points)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(color = "gray30", size = 12),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_text(face = "bold")
+  )
+
+```
+
+
+
