@@ -11,7 +11,7 @@
 
 <meta name="author" content="Anthony Fernandez" />
 
-<meta name="date" content="2025-06-05" />
+<meta name="date" content="2025-05-25" />
 
 <title>Momentum in the MLB 2021</title>
 
@@ -352,7 +352,7 @@ display: none;
 
 <h1 class="title toc-ignore">Momentum in the MLB 2021</h1>
 <h4 class="author">Anthony Fernandez</h4>
-<h4 class="date">2025-06-05</h4>
+<h4 class="date">2025-05-25</h4>
 
 </div>
 
@@ -367,11 +367,10 @@ library(tidyverse)
 
 
 # Load required packages
-#install.packages(&quot;data.table&quot;)  # Only run if needed
 library(data.table)
 library(dplyr)
 library(purrr)</code></pre>
-<pre class="r"><code># Safe downloader
+<pre class="r"><code># Safe Downloader
 get_statcast_data_weekly &lt;- function(start_date, end_date) {
   url &lt;- paste0(
     &quot;https://baseballsavant.mlb.com/statcast_search/csv?all=true&quot;,
@@ -392,7 +391,7 @@ get_statcast_data_weekly &lt;- function(start_date, end_date) {
     NULL
   })
 }</code></pre>
-<pre class="r"><code># Define weekly ranges for 2021 regular season
+<pre class="r"><code># Defined weekly ranges for 2021 regular season
 dates_2021 &lt;- data.frame(
   start = c(&quot;2021-04-01&quot;, &quot;2021-04-08&quot;, &quot;2021-04-15&quot;, &quot;2021-04-22&quot;, &quot;2021-04-29&quot;,
             &quot;2021-05-06&quot;, &quot;2021-05-13&quot;, &quot;2021-05-20&quot;, &quot;2021-05-27&quot;,
@@ -417,7 +416,7 @@ get_statcast_data_weekly &lt;- function(start_date, end_date) {
 # Run the download loop
 #statcast_2021 &lt;- purrr::map2_dfr(dates_2021$start, dates_2021$end, get_statcast_data_weekly)
 
-# Optional: Save result
+# Save result
 #saveRDS(statcast_2021, &quot;statcast_2021_full.rds&quot;)
 
 statcast_2021 &lt;- readRDS(&quot;statcast_2021_full.rds&quot;)</code></pre>
@@ -443,7 +442,7 @@ cols_to_keep &lt;- c(
 
 statcast_2021_clean &lt;- statcast_2021 %&gt;%
   select(all_of(cols_to_keep)) %&gt;%
-  filter(!is.na(events))  # Remove non-PA rows (e.g. pickoffs, warmups)
+  filter(!is.na(events))  
 
 # Check result
 glimpse(statcast_2021_clean)</code></pre>
@@ -545,7 +544,7 @@ team_momentum_ba &lt;- statcast_pa_2021 %&gt;%
   )</code></pre>
 <pre class="r"><code>library(tidyr)
 
-team_comparison &lt;- team_momentum_ba %&gt;%
+team_comparison_21 &lt;- team_momentum_ba %&gt;%
   pivot_wider(
     names_from = momentum,
     values_from = c(PA, Hits, Batting_Average),
@@ -557,7 +556,7 @@ team_comparison &lt;- team_momentum_ba %&gt;%
   arrange(desc(BA_Difference))
 
 # View top teams by momentum boost
-print(team_comparison)</code></pre>
+print(team_comparison_21)</code></pre>
 <pre><code>## # A tibble: 30 × 8
 ##    batting_team PA_momentum_0 PA_momentum_1 Hits_momentum_0 Hits_momentum_1
 ##    &lt;chr&gt;                &lt;int&gt;         &lt;int&gt;           &lt;dbl&gt;           &lt;dbl&gt;
@@ -574,12 +573,13 @@ print(team_comparison)</code></pre>
 ## # ℹ 20 more rows
 ## # ℹ 3 more variables: Batting_Average_momentum_0 &lt;dbl&gt;,
 ## #   Batting_Average_momentum_1 &lt;dbl&gt;, BA_Difference &lt;dbl&gt;</code></pre>
+<pre class="r"><code>#write.csv(team_comparison_21, &quot;team_comparison_21.csv&quot;, row.names = FALSE)</code></pre>
 <pre class="r"><code># Total hits in cleaned dataset
 sum(statcast_pa_2021$hit, na.rm = TRUE)</code></pre>
 <pre><code>## [1] 36606</code></pre>
 <pre class="r"><code># Total hits from your momentum breakdown
-sum(team_comparison$Hits_momentum_0, na.rm = TRUE) + 
-sum(team_comparison$Hits_momentum_1, na.rm = TRUE)</code></pre>
+sum(team_comparison_21$Hits_momentum_0, na.rm = TRUE) + 
+sum(team_comparison_21$Hits_momentum_1, na.rm = TRUE)</code></pre>
 <pre><code>## [1] 36606</code></pre>
 <p>The reason the total hits from the momentum breakdown
 (Hits_momentum_0 + Hits_momentum_1) don’t match official MLB hit totals
@@ -601,7 +601,7 @@ valid_pas &lt;- statcast_pa_2021 %&gt;%
   )) %&gt;%
   mutate(hit = ifelse(events %in% c(&quot;single&quot;, &quot;double&quot;, &quot;triple&quot;, &quot;home_run&quot;), 1, 0))
 
-# Run the t-test
+
 t_test_result &lt;- t.test(hit ~ momentum, data = valid_pas)
 
 print(t_test_result)</code></pre>
@@ -616,21 +616,24 @@ print(t_test_result)</code></pre>
 ## sample estimates:
 ## mean in group 0 mean in group 1 
 ##       0.2420148       0.2596769</code></pre>
-<p>For the 2021 season, my project shows that hitters had a
-significantly higher batting average when the previous batter reached
-base via a hit or sac fly. My code’s t-test revealed a mean difference
-of approximately 18 points, increasing from .242 (no momentum) to .260
-(with momentum), with a p-value &lt; 0.000000001. This provides strong
-statistical support for the presence of short-term momentum effects
-within offensive sequences.</p>
+<p>To statistically assess whether there is a significant difference in
+hitter performance following a momentum-generating event (defined as a
+hit or sac fly by the previous batter), my code ran a Welch Two Sample
+t-test comparing batting averages with and without momentum. The results
+show a statistically significant difference (t = -6.43, p-value &lt;
+0.0000000013), with batters hitting .2597 with momentum and .2420
+without. The 95% confidence interval for the difference in means ranges
+from -0.0230 to -0.0123, indicating that the increase in batting average
+associated with momentum is not only statistically significant but also
+practically relevant in the context of baseball performance.</p>
 <pre class="r"><code>library(ggplot2)
 
-ggplot(team_comparison %&gt;% filter(!is.na(batting_team)), 
+ggplot(team_comparison_21 %&gt;% filter(!is.na(batting_team)), 
        aes(x = reorder(batting_team, BA_Difference), y = BA_Difference, fill = BA_Difference &gt; 0)) +
   geom_col(width = 0.7, color = &quot;white&quot;, show.legend = FALSE) +
   scale_fill_manual(values = c(&quot;FALSE&quot; = &quot;#e74c3c&quot;, &quot;TRUE&quot; = &quot;#2ecc71&quot;)) +
   geom_text(aes(label = sprintf(&quot;%+d pts&quot;, round(BA_Difference * 1000))), 
-            hjust = ifelse(team_comparison$BA_Difference &gt; 0, -0.15, 1.1), 
+            hjust = ifelse(team_comparison_21$BA_Difference &gt; 0, -0.15, 1.1), 
             size = 3.5, color = &quot;black&quot;) +
   coord_flip() +
   labs(
