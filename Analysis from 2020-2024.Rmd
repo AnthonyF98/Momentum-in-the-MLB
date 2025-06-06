@@ -83,6 +83,8 @@ team_comparison_all %>%
 ```{r}
 library(cluster)
 library(factoextra)
+library(tibble)
+
 
 pivoted <- team_comparison_all %>%
   select(batting_team, Year, BA_Difference) %>%
@@ -95,10 +97,17 @@ pivoted_clean <- pivoted %>%
 
 # Run K-means
 set.seed(42)
-km <- kmeans(pivoted_clean, centers = 7, nstart = 25)
+km <- kmeans(pivoted_clean, centers = 5, nstart = 25)
 
 fviz_cluster(km, data = pivoted_clean) +
   labs(title = "Clustering Teams by Momentum Patterns (2020–2024)")
 
 ```
 
+### Cluster Narratives
+
+- **Cluster 1 – Upward Momentum Growers**: Slightly negative in 2020, improving every year through 2024.
+- **Cluster 2 – Steady, Modest Momentum Teams**: Mildly positive and consistent.
+- **Cluster 3 – Inconsistent or Rebounding Momentum Teams**: Big dip in 2020, mixed recovery.
+- **Cluster 4 – Elite Momentum Maximizers**: Strongest and steadily rising BA differences.
+- **Cluster 5 – Front-Loaded Momentum Teams**: Huge 2020 momentum boost, flatter since.
