@@ -544,7 +544,7 @@ team_momentum_ba &lt;- statcast_pa_2023 %&gt;%
   )</code></pre>
 <pre class="r"><code>library(tidyr)
 
-team_comparison &lt;- team_momentum_ba %&gt;%
+team_comparison_23 &lt;- team_momentum_ba %&gt;%
   pivot_wider(
     names_from = momentum,
     values_from = c(PA, Hits, Batting_Average),
@@ -556,7 +556,7 @@ team_comparison &lt;- team_momentum_ba %&gt;%
   arrange(desc(BA_Difference))
 
 # View top teams by momentum boost
-print(team_comparison)</code></pre>
+print(team_comparison_23)</code></pre>
 <pre><code>## # A tibble: 30 × 8
 ##    batting_team PA_momentum_0 PA_momentum_1 Hits_momentum_0 Hits_momentum_1
 ##    &lt;chr&gt;                &lt;int&gt;         &lt;int&gt;           &lt;dbl&gt;           &lt;dbl&gt;
@@ -573,12 +573,13 @@ print(team_comparison)</code></pre>
 ## # ℹ 20 more rows
 ## # ℹ 3 more variables: Batting_Average_momentum_0 &lt;dbl&gt;,
 ## #   Batting_Average_momentum_1 &lt;dbl&gt;, BA_Difference &lt;dbl&gt;</code></pre>
+<pre class="r"><code>#write.csv(team_comparison_23, &quot;team_comparison_23.csv&quot;, row.names = FALSE)</code></pre>
 <pre class="r"><code># Total hits in cleaned dataset
 sum(statcast_pa_2023$hit, na.rm = TRUE)</code></pre>
 <pre><code>## [1] 36855</code></pre>
 <pre class="r"><code># Total hits from your momentum breakdown
-sum(team_comparison$Hits_momentum_0, na.rm = TRUE) + 
-sum(team_comparison$Hits_momentum_1, na.rm = TRUE)</code></pre>
+sum(team_comparison_23$Hits_momentum_0, na.rm = TRUE) + 
+sum(team_comparison_23$Hits_momentum_1, na.rm = TRUE)</code></pre>
 <pre><code>## [1] 36855</code></pre>
 <p>The reason the total hits from the momentum breakdown
 (Hits_momentum_0 + Hits_momentum_1) don’t match official MLB hit totals
@@ -615,21 +616,14 @@ print(t_test_result)</code></pre>
 ## sample estimates:
 ## mean in group 0 mean in group 1 
 ##       0.2464070       0.2628978</code></pre>
-<p>For the 2023 season, my project shows that hitters had a
-significantly higher batting average when the previous batter reached
-base via a hit or sac fly. My code’s t-test revealed a mean difference
-of approximately 18 points, increasing from .242 (no momentum) to .260
-(with momentum), with a p-value &lt; 0.000000001. This provides strong
-statistical support for the presence of short-term momentum effects
-within offensive sequences.</p>
 <pre class="r"><code>library(ggplot2)
 
-ggplot(team_comparison %&gt;% filter(!is.na(batting_team)), 
+ggplot(team_comparison_23 %&gt;% filter(!is.na(batting_team)), 
        aes(x = reorder(batting_team, BA_Difference), y = BA_Difference, fill = BA_Difference &gt; 0)) +
   geom_col(width = 0.7, color = &quot;white&quot;, show.legend = FALSE) +
   scale_fill_manual(values = c(&quot;FALSE&quot; = &quot;#e74c3c&quot;, &quot;TRUE&quot; = &quot;#2ecc71&quot;)) +
   geom_text(aes(label = sprintf(&quot;%+d pts&quot;, round(BA_Difference * 1000))), 
-            hjust = ifelse(team_comparison$BA_Difference &gt; 0, -0.15, 1.1), 
+            hjust = ifelse(team_comparison_23$BA_Difference &gt; 0, -0.15, 1.1), 
             size = 3.5, color = &quot;black&quot;) +
   coord_flip() +
   labs(
